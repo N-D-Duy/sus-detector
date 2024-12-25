@@ -1,0 +1,12 @@
+# Ignore Python files
+*.py[cod]
+__pycache__/
+*.so
+
+# Ignore environment files
+.env
+.env.*
+
+# Ignore VSCode files
+.vscode/
+serviceAccountKey.json
