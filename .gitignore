@@ -10,3 +10,4 @@ __pycache__/
 # Ignore VSCode files
 .vscode/
 serviceAccountKey.json
+serviceAccountKey_1.json
