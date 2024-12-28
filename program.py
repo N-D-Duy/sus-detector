@@ -14,7 +14,7 @@ import tempfile
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
 STORAGE = os.getenv("STORAGE_BUCKET")
-cred = credentials.Certificate("serviceAccountKey_1.json")
+cred = credentials.Certificate("serviceAccountKey_2.json")
 firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
 bucket = storage.bucket(STORAGE) 
 
@@ -188,20 +188,31 @@ class DetectionSystem:
         if updates and current_time - self.last_firebase_update >= 1.0:
             try:
                 timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                updates_ref = {}
-                for key, value in updates.items():
-                    if key in ['level_1', 'level_2']:
-                        updates_ref[f'alerts/{key}'] = {
-                            "detected": value,
-                            "timestamp": timestamp
+                updates_ref = {
+                    "alerts": {
+                        "level_1": {
+                            "detected": updates.get('level_1', False),
+                            "timestamp": timestamp,
+                            "image_url": updates.get('level_1_image', None)
+                        },
+                        "level_2": {
+                            "detected": updates.get('level_2', False),
+                            "timestamp": timestamp,
+                            "image_url": updates.get('level_2_image', None)
                         }
-                    elif key in ['level_1_image', 'level_2_image']:
-                        level = key.split('_')[1]
-                        updates_ref[f'alerts/level_{level}/image_url'] = value
+                    }
+                }
+
+                for level in ["level_1", "level_2"]:
+                    if updates_ref["alerts"][level]["image_url"] is None:
+                        del updates_ref["alerts"][level]["image_url"]
+
                 db.reference().update(updates_ref)
                 self.last_firebase_update = current_time
+                print("Firebase updated successfully")
             except Exception as e:
                 print(f"Firebase update error: {e}")
+
 
     def display_frames(self):
         while self.running:
