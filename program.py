@@ -14,14 +14,14 @@ import tempfile
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
 STORAGE = os.getenv("STORAGE_BUCKET")
-cred = credentials.Certificate("serviceAccountKey_2.json")
+cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
 bucket = storage.bucket(STORAGE) 
 
 class DetectionSystem:
     def __init__(self):
     
-        self.model = YOLO('yolo11m-cls.pt')
+        self.model = YOLO('yolo11l-cls.pt')
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
         
         self.frame_queue = queue.Queue(maxsize=2)
