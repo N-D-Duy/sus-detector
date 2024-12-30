@@ -14,6 +14,9 @@ import tempfile
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
 STORAGE = os.getenv("STORAGE_BUCKET")
+CONFIDENCE_THRESHOLD = os.getenv("CONFIDENCE_THRESHOLD")
+TIME_TO_TRIGGER = os.getenv("TIME_TO_TRIGGER")
+TIME_TO_RESET = os.getenv("TIME_TO_RESET")
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
 bucket = storage.bucket(STORAGE) 
@@ -98,7 +101,7 @@ class DetectionSystem:
                 confidence = float(results[0].probs.data[top_class_idx])
                 
         
-                if confidence > 0.3: 
+                if confidence > CONFIDENCE_THRESHOLD: 
                     detected_class = {class_name}
                 else:
                     detected_class = set()
@@ -155,7 +158,7 @@ class DetectionSystem:
         if level_1_detected and not self.event_triggered_level_1:
             if self.level_1_detected_start is None:
                 self.level_1_detected_start = current_time
-            elif current_time - self.level_1_detected_start > 3:
+            elif current_time - self.level_1_detected_start > TIME_TO_TRIGGER:
                 updates['level_1'] = True
                 self.event_triggered_level_1 = True
                 if frame is not None:
@@ -169,7 +172,7 @@ class DetectionSystem:
         if level_2_detected and not self.event_triggered_level_2:
             if self.level_2_detected_start is None:
                 self.level_2_detected_start = current_time
-            elif current_time - self.level_2_detected_start > 3:
+            elif current_time - self.level_2_detected_start > TIME_TO_TRIGGER:
                 updates['level_2'] = True
                 self.event_triggered_level_2 = True
                 if frame is not None:
@@ -180,7 +183,7 @@ class DetectionSystem:
             self.level_2_detected_start = None
             self.event_triggered_level_2 = False
         
-        if current_time - self.last_detection_time > 30:
+        if current_time - self.last_detection_time > TIME_TO_RESET:
             updates['level_1'] = False
             updates['level_2'] = False
             self.last_detection_time = current_time
