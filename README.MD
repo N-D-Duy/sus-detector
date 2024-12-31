@@ -43,5 +43,12 @@ pip install -r requirements.txt
 ### 4. Chạy Ứng Dụng
 
 ```bash
-python main.py
+python program.py
+```
+
+### Optional: Thử các model khác
+-> Bạn có thể thử các model khác bằng cách thay đổi giá trị của biến `model` trong file `program.py`:
+
+```python
+self.model = YOLO('model_1.pt')
 ```
