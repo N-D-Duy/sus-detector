@@ -10,13 +10,13 @@ import queue
 import threading
 import torch
 import tempfile
-
 load_dotenv()
 DB_URL = os.getenv("DB_URL")
 STORAGE = os.getenv("STORAGE_BUCKET")
-CONFIDENCE_THRESHOLD = os.getenv("CONFIDENCE_THRESHOLD")
-TIME_TO_TRIGGER = os.getenv("TIME_TO_TRIGGER")
-TIME_TO_RESET = os.getenv("TIME_TO_RESET")
+CAMERA_INDEX = int(os.getenv("CAMERA_INDEX", 0))
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD"))
+TIME_TO_TRIGGER = int(os.getenv("TIME_TO_TRIGGER"))
+TIME_TO_RESET = int(os.getenv("TIME_TO_RESET"))
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
 bucket = storage.bucket(STORAGE) 
@@ -45,9 +45,12 @@ class DetectionSystem:
         self.frame_counter = 0
         self.last_fps_time = time.time()
         self.fps = 0
+        
+        self.level_1_flag = False
+        self.level_2_flag = False
 
     def capture_frames(self):
-        cap = cv2.VideoCapture(0)
+        cap = cv2.VideoCapture(CAMERA_INDEX)
         
     
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 416)
@@ -62,7 +65,6 @@ class DetectionSystem:
                 ret, frame = cap.read()
                 if not ret:
                     break
-                
                 self.frame_counter += 1
                 current_time = time.time()
                 
@@ -72,8 +74,8 @@ class DetectionSystem:
                     last_time = current_time
                 
             
-                if self.frame_counter % self.process_every_n_frames != 0:
-                    continue
+                # if self.frame_counter % self.process_every_n_frames != 0:
+                #     continue
                 
         
                 if self.frame_queue.full():
@@ -124,6 +126,7 @@ class DetectionSystem:
 
     def save_to_firebase_storage(self, frame, level):
         try:
+            print("Saving image to Firebase Storage")
             with tempfile.NamedTemporaryFile(suffix='.jpg') as temp_file:
                 cv2.imwrite(temp_file.name, frame)
                 
@@ -144,75 +147,78 @@ class DetectionSystem:
         current_time = time.time()
         level_1_detected = bool(detected_class & self.warning_level_1)
         level_2_detected = bool(detected_class & self.warning_level_2)
-        
-        updates = {}
-        
+
         if level_1_detected or level_2_detected:
             self.last_detection_time = current_time
-        
-        try:
-            frame = self.frame_queue.queue[0]
-        except:
-            frame = None
 
+        try:
+            frame = self.frame_queue.get_nowait() 
+            self.frame_queue.put(frame)
+        except:
+            print("Frame is None")
+            frame = None
         if level_1_detected and not self.event_triggered_level_1:
             if self.level_1_detected_start is None:
                 self.level_1_detected_start = current_time
             elif current_time - self.level_1_detected_start > TIME_TO_TRIGGER:
-                updates['level_1'] = True
+                print("Level 1 detected")
                 self.event_triggered_level_1 = True
+                self.level_1_flag = True
                 if frame is not None:
+                    print("Saving image level 1 to Firebase Storage")
                     image_url = self.save_to_firebase_storage(frame, 1)
                     if image_url:
-                        updates['level_1_image'] = image_url
+                        self.level_1_image_url = image_url
+                else :
+                    print("Frame is None")
         elif not level_1_detected:
             self.level_1_detected_start = None
             self.event_triggered_level_1 = False
-        
+
         if level_2_detected and not self.event_triggered_level_2:
             if self.level_2_detected_start is None:
                 self.level_2_detected_start = current_time
             elif current_time - self.level_2_detected_start > TIME_TO_TRIGGER:
-                updates['level_2'] = True
                 self.event_triggered_level_2 = True
+                self.level_2_flag = True
                 if frame is not None:
                     image_url = self.save_to_firebase_storage(frame, 2)
                     if image_url:
-                        updates['level_2_image'] = image_url
+                        self.level_2_image_url = image_url
         elif not level_2_detected:
             self.level_2_detected_start = None
             self.event_triggered_level_2 = False
-        
+
         if current_time - self.last_detection_time > TIME_TO_RESET:
-            updates['level_1'] = False
-            updates['level_2'] = False
+            self.level_1_flag = False
+            self.level_2_flag = False
             self.last_detection_time = current_time
-        
-        if updates and current_time - self.last_firebase_update >= 1.0:
+
+        if (self.level_1_flag or self.level_2_flag) and (current_time - self.last_firebase_update >= 30.0):
             try:
                 timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                updates_ref = {
-                    "alerts": {
-                        "level_1": {
-                            "detected": updates.get('level_1', False),
-                            "timestamp": timestamp,
-                            "image_url": updates.get('level_1_image', None)
-                        },
-                        "level_2": {
-                            "detected": updates.get('level_2', False),
-                            "timestamp": timestamp,
-                            "image_url": updates.get('level_2_image', None)
-                        }
+                updates_ref = {}
+
+                
+                if self.level_1_flag:
+                    level_1_data = {
+                        "detected": True,
+                        "timestamp": timestamp
                     }
-                }
+                    updates_ref["alerts/level_1"] = level_1_data
 
-                for level in ["level_1", "level_2"]:
-                    if updates_ref["alerts"][level]["image_url"] is None:
-                        del updates_ref["alerts"][level]["image_url"]
+            
+                if self.level_2_flag:
+                    level_2_data = {
+                        "detected": True,
+                        "timestamp": timestamp
+                    }
+                    updates_ref["alerts/level_2"] = level_2_data
 
-                db.reference().update(updates_ref)
-                self.last_firebase_update = current_time
-                print("Firebase updated successfully")
+                if updates_ref:
+                    db.reference().update(updates_ref)
+                    self.last_firebase_update = current_time
+                    print("Firebase updated successfully")
             except Exception as e:
                 print(f"Firebase update error: {e}")
 
