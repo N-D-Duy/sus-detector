@@ -33,7 +33,7 @@ class DetectionSystem:
         
 
         self.warning_level_1 = set(['gasmask', 'mask', 'ski_mask', 'oxygen_mask'])
-        self.warning_level_2 = set(['cleaver', 'revolver', 'assault rifle'])
+        self.warning_level_2 = set(['cleaver', 'revolver', 'assault rifle', 'screwdriver'])
         self.level_1_detected_start = None
         self.level_2_detected_start = None
         self.event_triggered_level_1 = False
@@ -148,15 +148,13 @@ class DetectionSystem:
         level_1_detected = bool(detected_class & self.warning_level_1)
         level_2_detected = bool(detected_class & self.warning_level_2)
 
-        if level_1_detected or level_2_detected:
-            self.last_detection_time = current_time
-
         try:
             frame = self.frame_queue.get_nowait() 
             self.frame_queue.put(frame)
         except:
             print("Frame is None")
             frame = None
+
         if level_1_detected and not self.event_triggered_level_1:
             if self.level_1_detected_start is None:
                 self.level_1_detected_start = current_time
@@ -165,64 +163,73 @@ class DetectionSystem:
                 self.event_triggered_level_1 = True
                 self.level_1_flag = True
                 if frame is not None:
-                    print("Saving image level 1 to Firebase Storage")
                     image_url = self.save_to_firebase_storage(frame, 1)
                     if image_url:
                         self.level_1_image_url = image_url
-                else :
-                    print("Frame is None")
+                        try:
+                            timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                            db.reference().child('alerts/level_1').update({
+                                "detected": True,
+                                "timestamp": timestamp
+                            })
+                            self.last_firebase_update = current_time
+                            print("Level 1 alert sent to Firebase")
+                        except Exception as e:
+                            print(f"Firebase Level 1 update error: {e}")
         elif not level_1_detected:
             self.level_1_detected_start = None
             self.event_triggered_level_1 = False
+            if self.level_1_flag and (current_time - self.last_detection_time > 30.0):
+                try:
+                    timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                    db.reference().child('alerts/level_1').update({
+                        "detected": False,
+                        "timestamp": timestamp
+                    })
+                    self.level_1_flag = False
+                    print("Level 1 alert cleared in Firebase")
+                except Exception as e:
+                    print(f"Firebase Level 1 clear error: {e}")
 
         if level_2_detected and not self.event_triggered_level_2:
             if self.level_2_detected_start is None:
                 self.level_2_detected_start = current_time
             elif current_time - self.level_2_detected_start > TIME_TO_TRIGGER:
+                print("Level 2 detected")
                 self.event_triggered_level_2 = True
                 self.level_2_flag = True
                 if frame is not None:
                     image_url = self.save_to_firebase_storage(frame, 2)
                     if image_url:
                         self.level_2_image_url = image_url
+                        try:
+                            timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                            db.reference().child('alerts/level_2').update({
+                                "detected": True,
+                                "timestamp": timestamp
+                            })
+                            self.last_firebase_update = current_time
+                            print("Level 2 alert sent to Firebase")
+                        except Exception as e:
+                            print(f"Firebase Level 2 update error: {e}")
         elif not level_2_detected:
             self.level_2_detected_start = None
             self.event_triggered_level_2 = False
+            if self.level_2_flag and (current_time - self.last_detection_time > 30.0):
+                try:
+                    timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                    db.reference().child('alerts/level_2').update({
+                        "detected": False,
+                        "timestamp": timestamp
+                    })
+                    self.level_2_flag = False
+                    print("Level 2 alert cleared in Firebase")
+                except Exception as e:
+                    print(f"Firebase Level 2 clear error: {e}")
 
-        if current_time - self.last_detection_time > TIME_TO_RESET:
-            self.level_1_flag = False
-            self.level_2_flag = False
+        if level_1_detected or level_2_detected:
             self.last_detection_time = current_time
-
-        if (self.level_1_flag or self.level_2_flag) and (current_time - self.last_firebase_update >= 30.0):
-            try:
-                timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                updates_ref = {}
-
-                
-                if self.level_1_flag:
-                    level_1_data = {
-                        "detected": True,
-                        "timestamp": timestamp
-                    }
-                    updates_ref["alerts/level_1"] = level_1_data
-
-            
-                if self.level_2_flag:
-                    level_2_data = {
-                        "detected": True,
-                        "timestamp": timestamp
-                    }
-                    updates_ref["alerts/level_2"] = level_2_data
-
-                if updates_ref:
-                    db.reference().update(updates_ref)
-                    self.last_firebase_update = current_time
-                    print("Firebase updated successfully")
-            except Exception as e:
-                print(f"Firebase update error: {e}")
-
-
+        
     def display_frames(self):
         while self.running:
             try:
