@@ -215,7 +215,7 @@ class DetectionSystem:
         elif not level_2_detected:
             self.level_2_detected_start = None
             self.event_triggered_level_2 = False
-            if self.level_2_flag and (current_time - self.last_detection_time > 30.0):
+            if self.level_2_flag and (current_time - self.last_detection_time > 15.0):
                 try:
                     timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
                     db.reference().child('alerts/level_2').update({
