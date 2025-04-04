@@ -26,9 +26,10 @@ class DetectionSystem:
     
         self.model = YOLO('yolo11l-cls.pt')
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
-        
+
         self.frame_queue = queue.Queue(maxsize=2)
         self.results_queue = queue.Queue(maxsize=2)
+        self.firebase_queue = queue.Queue(maxsize=5)
         self.running = True
         
 
@@ -48,6 +49,7 @@ class DetectionSystem:
         
         self.level_1_flag = False
         self.level_2_flag = False
+
 
     def capture_frames(self):
         cap = cv2.VideoCapture(CAMERA_INDEX)
@@ -143,6 +145,45 @@ class DetectionSystem:
             print(f"Error saving image to Firebase Storage: {e}")
             return None
     
+    def firebase_worker(self):
+        """Process Firebase operations in a separate thread"""
+        while self.running:
+            try:
+                # Get task from queue with a timeout
+                task = self.firebase_queue.get(timeout=0.1)
+                
+                operation, data = task
+                
+                if operation == "save_image":
+                    frame, level = data
+                    image_url = self.save_to_firebase_storage(frame, level)
+                    if image_url:
+                        current_time = time.time()
+                        timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                        db.reference().child(f'alerts/level_{level}').update({
+                            "detected": True,
+                            "timestamp": timestamp,
+                            "image_url": image_url
+                        })
+                        print(f"Level {level} alert sent to Firebase")
+                
+                elif operation == "update_status":
+                    level, status = data
+                    current_time = time.time()
+                    timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
+                    db.reference().child(f'alerts/level_{level}').update({
+                        "detected": status,
+                        "timestamp": timestamp
+                    })
+                    print(f"Level {level} alert {'sent' if status else 'cleared'} in Firebase")
+                
+                self.firebase_queue.task_done()
+                
+            except queue.Empty:
+                continue
+            except Exception as e:
+                print(f"Firebase worker error: {e}")
+    
     def handle_detections(self, detected_class):
         current_time = time.time()
         level_1_detected = bool(detected_class & self.warning_level_1)
@@ -163,33 +204,15 @@ class DetectionSystem:
                 self.event_triggered_level_1 = True
                 self.level_1_flag = True
                 if frame is not None:
-                    image_url = self.save_to_firebase_storage(frame, 1)
-                    if image_url:
-                        self.level_1_image_url = image_url
-                        try:
-                            timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                            db.reference().child('alerts/level_1').update({
-                                "detected": True,
-                                "timestamp": timestamp
-                            })
-                            self.last_firebase_update = current_time
-                            print("Level 1 alert sent to Firebase")
-                        except Exception as e:
-                            print(f"Firebase Level 1 update error: {e}")
+                    # Queue Firebase operation instead of doing it in this thread
+                    self.firebase_queue.put(("save_image", (frame.copy(), 1)))
         elif not level_1_detected:
             self.level_1_detected_start = None
             self.event_triggered_level_1 = False
             if self.level_1_flag and (current_time - self.last_detection_time > 30.0):
-                try:
-                    timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                    db.reference().child('alerts/level_1').update({
-                        "detected": False,
-                        "timestamp": timestamp
-                    })
-                    self.level_1_flag = False
-                    print("Level 1 alert cleared in Firebase")
-                except Exception as e:
-                    print(f"Firebase Level 1 clear error: {e}")
+                # Queue status update
+                self.firebase_queue.put(("update_status", (1, False)))
+                self.level_1_flag = False
 
         if level_2_detected and not self.event_triggered_level_2:
             if self.level_2_detected_start is None:
@@ -199,33 +222,15 @@ class DetectionSystem:
                 self.event_triggered_level_2 = True
                 self.level_2_flag = True
                 if frame is not None:
-                    image_url = self.save_to_firebase_storage(frame, 2)
-                    if image_url:
-                        self.level_2_image_url = image_url
-                        try:
-                            timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                            db.reference().child('alerts/level_2').update({
-                                "detected": True,
-                                "timestamp": timestamp
-                            })
-                            self.last_firebase_update = current_time
-                            print("Level 2 alert sent to Firebase")
-                        except Exception as e:
-                            print(f"Firebase Level 2 update error: {e}")
+                    # Queue Firebase operation instead of doing it in this thread
+                    self.firebase_queue.put(("save_image", (frame.copy(), 2)))
         elif not level_2_detected:
             self.level_2_detected_start = None
             self.event_triggered_level_2 = False
             if self.level_2_flag and (current_time - self.last_detection_time > 15.0):
-                try:
-                    timestamp = datetime.datetime.fromtimestamp(current_time).strftime('%Y-%m-%d %H:%M:%S')
-                    db.reference().child('alerts/level_2').update({
-                        "detected": False,
-                        "timestamp": timestamp
-                    })
-                    self.level_2_flag = False
-                    print("Level 2 alert cleared in Firebase")
-                except Exception as e:
-                    print(f"Firebase Level 2 clear error: {e}")
+                # Queue status update
+                self.firebase_queue.put(("update_status", (2, False)))
+                self.level_2_flag = False
 
         if level_1_detected or level_2_detected:
             self.last_detection_time = current_time
@@ -254,7 +259,8 @@ class DetectionSystem:
         threads = [
             threading.Thread(target=self.capture_frames),
             threading.Thread(target=self.process_frames),
-            threading.Thread(target=self.display_frames)
+            threading.Thread(target=self.display_frames),
+            threading.Thread(target=self.firebase_worker)  # Add Firebase worker thread
         ]
         
         for t in threads:
