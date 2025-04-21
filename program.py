@@ -22,6 +22,7 @@ firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
 bucket = storage.bucket(STORAGE) 
 
 class DetectionSystem:
+    
     def __init__(self):
     
         self.model = YOLO('yolo11l-cls.pt')
@@ -50,11 +51,9 @@ class DetectionSystem:
         self.level_1_flag = False
         self.level_2_flag = False
 
-
     def capture_frames(self):
         cap = cv2.VideoCapture(CAMERA_INDEX)
         
-    
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 416)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 416)
         cap.set(cv2.CAP_PROP_FPS, 30)
@@ -75,11 +74,6 @@ class DetectionSystem:
                     self.frame_counter = 0
                     last_time = current_time
                 
-            
-                # if self.frame_counter % self.process_every_n_frames != 0:
-                #     continue
-                
-        
                 if self.frame_queue.full():
                     try:
                         self.frame_queue.get_nowait()
@@ -124,7 +118,6 @@ class DetectionSystem:
                 continue
             except Exception as e:
                 print(f"Processing error: {e}")
-
 
     def save_to_firebase_storage(self, frame, level):
         try:
@@ -260,7 +253,7 @@ class DetectionSystem:
             threading.Thread(target=self.capture_frames),
             threading.Thread(target=self.process_frames),
             threading.Thread(target=self.display_frames),
-            threading.Thread(target=self.firebase_worker)  # Add Firebase worker thread
+            threading.Thread(target=self.firebase_worker)  
         ]
         
         for t in threads:
