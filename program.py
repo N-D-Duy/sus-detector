@@ -286,25 +286,24 @@ class DetectionSystem:
 
     def close_door(self):
         """Đóng cửa sau khi hết thời gian"""
-        with self.door_lock:
             
-            if self.door_is_open and self.door_opened_by_face_recognition:
-                print("Đóng cửa tự động")
-                self.door_is_open = False
-                self.door_open_time = None
-                self.door_opened_by_face_recognition = False
+        if self.door_is_open and self.door_opened_by_face_recognition:
+            print("Đóng cửa tự động")
+            self.door_is_open = False
+            self.door_open_time = None
+            self.door_opened_by_face_recognition = False
+            
+            
+            try:
+                db.reference().child('iot/door').set(False)
+                print("Đã gửi lệnh đóng cửa đến Firebase: iot/door = false")
+            except Exception as e:
+                print(f"Firebase door update error: {e}")
                 
                 
-                try:
-                    db.reference().child('iot/door').set(False)
-                    print("Đã gửi lệnh đóng cửa đến Firebase: iot/door = false")
-                except Exception as e:
-                    print(f"Firebase door update error: {e}")
-                    
-                    
-                    self.door_is_open = True
-                    self.door_open_time = time.time()
-                    self.door_opened_by_face_recognition = True
+                self.door_is_open = True
+                self.door_open_time = time.time()
+                self.door_opened_byce_recognition = True
 
     def firebase_listener(self):
         """Theo dõi thay đổi trạng thái cửa từ Firebase"""
@@ -320,8 +319,7 @@ class DetectionSystem:
                             old_status = self.door_is_open
                             self.door_is_open = new_door_status
                             print(f"Trạng thái cửa đã được thay đổi từ app: {old_status} → {new_door_status}")
-                            
-                            
+                                
                             if self.door_is_open:
                                 self.door_opened_by_face_recognition = False  
                                 self.door_open_time = None  
