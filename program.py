@@ -25,19 +25,17 @@ DOOR_OPEN_DURATION = int(os.getenv("DOOR_OPEN_DURATION", 5))
 
 cred = credentials.Certificate("serviceAccountKey.json")
 firebase_admin.initialize_app(cred, {'databaseURL': DB_URL})
-bucket = storage.bucket(STORAGE) 
+bucket = storage.bucket(STORAGE)
 
 class DetectionSystem:
     def __init__(self):
         self.model = YOLO('yolo11l-cls.pt')
         self.model.to('cuda' if torch.cuda.is_available() else 'cpu')
         
-        
         self.frame_queue = queue.Queue(maxsize=2)        
         self.face_frame_queue = queue.Queue(maxsize=2)   
         self.results_queue = queue.Queue(maxsize=2)
         self.running = True
-        
         
         self.warning_level_1 = set(['gasmask', 'mask', 'ski_mask', 'oxygen_mask'])
         self.warning_level_2 = set(['cleaver', 'revolver', 'assault rifle', 'screwdriver'])
@@ -247,7 +245,6 @@ class DetectionSystem:
                 face_encodings = face_recognition.face_encodings(rgb_small_frame, face_locations)
                 
                 for face_encoding in face_encodings:
-                    
                     matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=FACE_RECOGNITION_THRESHOLD)
                     
                     
@@ -260,9 +257,8 @@ class DetectionSystem:
                             name = self.known_face_names[best_match_index]
                             similarity = 1 - face_distances[best_match_index]
                             print(f"Nhận diện thành công: {name} (Độ tương đồng: {similarity:.2f})")
-                            
-                            
-                            self.open_door(name)
+                            if(similarity >= FACE_RECOGNITION_THRESHOLD):
+                                self.open_door(name)
                             return
         except Exception as e:
             print(f"Lỗi trong quá trình nhận diện khuôn mặt: {e}")
