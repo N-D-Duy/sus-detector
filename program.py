@@ -231,12 +231,8 @@ class DetectionSystem:
             return
         
         try:
-            
             small_frame = cv2.resize(frame, (0, 0), fx=0.25, fy=0.25)
-            
-            
             rgb_small_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
-            
             
             face_locations = face_recognition.face_locations(rgb_small_frame)
             
@@ -247,7 +243,6 @@ class DetectionSystem:
                 for face_encoding in face_encodings:
                     matches = face_recognition.compare_faces(self.known_face_encodings, face_encoding, tolerance=FACE_RECOGNITION_THRESHOLD)
                     
-                    
                     face_distances = face_recognition.face_distance(self.known_face_encodings, face_encoding)
                     
                     if len(face_distances) > 0:
@@ -257,8 +252,7 @@ class DetectionSystem:
                             name = self.known_face_names[best_match_index]
                             similarity = 1 - face_distances[best_match_index]
                             print(f"Nhận diện thành công: {name} (Độ tương đồng: {similarity:.2f})")
-                            if(similarity >= FACE_RECOGNITION_THRESHOLD):
-                                self.open_door(name)
+                            self.open_door(name)
                             return
         except Exception as e:
             print(f"Lỗi trong quá trình nhận diện khuôn mặt: {e}")
@@ -272,13 +266,11 @@ class DetectionSystem:
                 self.door_open_time = time.time()
                 self.door_opened_by_face_recognition = True  
                 
-                
                 try:
                     db.reference().child('iot/door').set(True)
                     print("Đã gửi lệnh mở cửa đến Firebase: iot/door = true")
                 except Exception as e:
                     print(f"Firebase door update error: {e}")
-                    
                     
                     self.door_is_open = False
                     self.door_open_time = None
@@ -293,14 +285,12 @@ class DetectionSystem:
             self.door_open_time = None
             self.door_opened_by_face_recognition = False
             
-            
             try:
                 db.reference().child('iot/door').set(False)
                 print("Đã gửi lệnh đóng cửa đến Firebase: iot/door = false")
             except Exception as e:
                 print(f"Firebase door update error: {e}")
-                
-                
+                 
                 self.door_is_open = True
                 self.door_open_time = time.time()
                 self.door_opened_byce_recognition = True
@@ -310,8 +300,7 @@ class DetectionSystem:
         print("Bắt đầu lắng nghe thay đổi trạng thái cửa từ Firebase")
         
         def door_callback(event):
-            try:
-                
+            try: 
                 if event.data is not None:
                     new_door_status = bool(event.data)
                     with self.door_lock:
@@ -323,18 +312,15 @@ class DetectionSystem:
                             if self.door_is_open:
                                 self.door_opened_by_face_recognition = False  
                                 self.door_open_time = None  
-                            
-                            
+                             
                             else:
                                 self.door_open_time = None
                                 self.door_opened_by_face_recognition = False
             except Exception as e:
                 print(f"Lỗi khi xử lý thay đổi từ Firebase: {e}")
 
-        
         door_ref = db.reference().child('iot/door')
-        door_ref.listen(door_callback)
-        
+        door_ref.listen(door_callback)        
         
         while self.running:
             try:
@@ -344,7 +330,6 @@ class DetectionSystem:
                     firebase_door_state = db.reference().child('iot/door').get()
                     if firebase_door_state is not None and bool(firebase_door_state) != self.door_is_open:
                         print(f"Door state sync error detected! Firebase: {firebase_door_state}, Local: {self.door_is_open}")
-                        
                         
                         db.reference().child('iot/door').set(self.door_is_open)
                         print(f"Resynced door state to Firebase: {self.door_is_open}")
